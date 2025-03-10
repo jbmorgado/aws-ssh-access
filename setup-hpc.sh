@@ -18,7 +18,7 @@ PROFILE_NAME="$1"
 MFA_IDENTIFIER="$2"
 
 # -------- Configuration ----------
-INSTALLER_URL="https://raw.githubusercontent.com/jbmorgado/aws-ssh-access"
+INSTALLER_BASE_URL="https://raw.githubusercontent.com/jbmorgado/aws-ssh-access/main"
 LOCAL_BIN_DIR="$HOME/.local/bin"
 
 LINUX_EXECUTABLES=(
@@ -121,24 +121,31 @@ EOF
 
 install_ssh_script() {
     local script_path="$LOCAL_BIN_DIR/ssh-aws-ssm.sh"
+    local ssh_script_url="$INSTALLER_BASE_URL/ssh-aws-ssm.sh"
     
     mkdir -p "$LOCAL_BIN_DIR"
-    
-    # Derive SSH script URL from installer URL
-    local ssh_script_url="${INSTALLER_URL}/refs/heads/master/ssh-aws-ssm.sh"
-    
+
     echo "Downloading SSH helper script from $ssh_script_url..."
-    curl -fsSL -o "$script_path" "$ssh_script_url" || {
+    if ! curl -fsSL -o "$script_path" "$ssh_script_url"; then
         echo "ERROR: Failed to download ssh-aws-ssm.sh"
-        return 1
-    }
+        echo "Please verify the URL is accessible:"
+        echo "$ssh_script_url"
+        exit 1
+    fi
     
     chmod +x "$script_path"
     echo "Installed ssh-aws-ssm.sh to $LOCAL_BIN_DIR"
     
-    # Check if LOCAL_BIN_DIR is in PATH
+    # Verify script integrity
+    if ! head -1 "$script_path" | grep -q '^#!/'; then
+        echo "ERROR: Downloaded script appears invalid"
+        rm -f "$script_path"
+        exit 1
+    fi
+    
+    # Check PATH configuration
     if [[ ":$PATH:" != *":$LOCAL_BIN_DIR:"* ]]; then
-        echo "WARNING: $LOCAL_BIN_DIR is not in your PATH. Add the following to your shell configuration:"
+        echo "WARNING: $LOCAL_BIN_DIR is not in your PATH. Add to your shell config:"
         echo "export PATH=\"$LOCAL_BIN_DIR:\$PATH\""
     fi
 }
