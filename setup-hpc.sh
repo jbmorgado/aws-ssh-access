@@ -7,10 +7,20 @@ if [ -z "${BASH_VERSION:-}" ]; then
     exit $?
 fi
 
+# Color definitions
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+CHECK="✓"
+WARN="⚠"
+INFO="ℹ"
+
 # Check for required arguments
 if [ $# -ne 3 ]; then
-    echo "Usage: $0 <iam_username> <mfa_identifier> <profile_name>"
-    echo "Example: curl -sSL https://example.com/installer.sh | bash -s --  iam-john.smith arn:aws:iam::441841723118:mfa/Example jsmith"
+    echo -e "${RED}Usage: $0 <iam_username> <mfa_identifier> <profile_name>${NC}"
+    echo -e "${YELLOW}Example: curl -sSL https://example.com/installer.sh | bash -s -- iam-john.smith arn:aws:iam::441841723118:mfa/Example jsmith${NC}"
     exit 1
 fi
 
@@ -50,17 +60,17 @@ detect_os() {
                 . /etc/os-release
                 OS_ID="$ID"
                 if [[ "$OS_ID" != "debian" && "$OS_ID" != "ubuntu" && "$OS_ID" != "pop" && "$OS_ID" != "fedora" ]]; then
-                    echo "Unsupported Linux distribution: $OS_ID"
+                    echo -e "${RED}Unsupported Linux distribution: $OS_ID${NC}"
                     exit 1
                 fi
             else
-                echo "Unsupported Linux distribution"
+                echo -e "${RED}Unsupported Linux distribution${NC}"
                 exit 1
             fi
             ;;
         darwin*) OS="macos" ;;
         *)
-            echo "Unsupported OS: $OS"
+            echo -e "${RED}Unsupported OS: $OS${NC}"
             exit 1
             ;;
     esac
@@ -91,7 +101,7 @@ mfa_serial = $MFA_IDENTIFIER
 EOF
     fi
 
-    echo "AWS configuration created/updated at $config_file"
+    echo -e "${GREEN}${CHECK} AWS configuration created/updated at $config_file${NC}"
 }
 
 setup_ssh_config() {
@@ -101,11 +111,9 @@ setup_ssh_config() {
     local script_path="$LOCAL_BIN_DIR/ssh-aws-ssm.sh"
 
     if [ ! -f "$identity_file" ]; then
-        echo
-        echo "WARNING: Expected SSH key $identity_file not found!"
-        echo "Unless you are sure you have a good motive to have the key in a different file, you must generate one with: ssh-keygen -t ed25519 -f $identity_file."
-        echo "Otherwise, be sure to change the dp-hpc-headnode entry in $config_file to point at the correct key."
-        echo
+        echo -e "\n${YELLOW}${WARN} WARNING: Expected SSH key $identity_file not found!${NC}"
+        echo -e "${YELLOW}Unless you have a specific reason to use a different key, generate one with:"
+        echo -e "ssh-keygen -t ed25519 -f $identity_file${NC}\n"
     fi
     
     mkdir -p "$ssh_dir"
@@ -121,9 +129,9 @@ Host dp-hpc-headnode
     IdentityFile $identity_file
     ServerAliveInterval 60
 EOF
-        echo "SSH configuration updated at $config_file"
+        echo -e "${GREEN}${CHECK} SSH configuration updated at $config_file${NC}"
     else
-        echo "SSH configuration already exists, skipping update"
+        echo -e "${CYAN}${INFO} SSH configuration already exists, skipping update${NC}"
     fi
 }
 
@@ -133,35 +141,32 @@ install_ssh_script() {
     
     mkdir -p "$LOCAL_BIN_DIR"
 
-    echo "Downloading SSH helper script from $ssh_script_url..."
+    echo -e "${CYAN}${INFO} Downloading SSH helper script from $ssh_script_url...${NC}"
     if ! curl -fsSL -o "$script_path" "$ssh_script_url"; then
-        echo "ERROR: Failed to download ssh-aws-ssm.sh"
-        echo "Please verify the URL is accessible:"
-        echo "$ssh_script_url"
+        echo -e "\n${RED}✖ ERROR: Failed to download ssh-aws-ssm.sh${NC}"
+        echo -e "${RED}Please verify the URL is accessible:"
+        echo -e "$ssh_script_url${NC}\n"
         exit 1
     fi
     
     chmod +x "$script_path"
-    echo "Installed ssh-aws-ssm.sh to $LOCAL_BIN_DIR"
+    echo -e "${GREEN}${CHECK} Installed ssh-aws-ssm.sh to $LOCAL_BIN_DIR${NC}"
     
-    # Verify script integrity
     if ! head -1 "$script_path" | grep -q '^#!/'; then
-        echo "ERROR: Downloaded script appears invalid"
+        echo -e "\n${RED}✖ ERROR: Downloaded script appears invalid${NC}"
         rm -f "$script_path"
         exit 1
     fi
     
-    # Check PATH configuration
     if [[ ":$PATH:" != *":$LOCAL_BIN_DIR:"* ]]; then
-        echo "WARNING: $LOCAL_BIN_DIR is not in your PATH. Add to your shell config:"
+        echo -e "${YELLOW}${WARN} WARNING: $LOCAL_BIN_DIR is not in your PATH. Add to shell config:${NC}"
         echo "export PATH=\"$LOCAL_BIN_DIR:\$PATH\""
     fi
 }
 
 setup_linux() {
-    echo "Setting up Linux ($OS_ID)..."
+    echo -e "\n${CYAN}${INFO} Setting up Linux ($OS_ID)...${NC}"
 
-    # Common dependencies
     case "$OS_ID" in
         debian|ubuntu|pop)
             sudo apt-get update
@@ -172,20 +177,19 @@ setup_linux() {
             ;;
     esac
 
-    # Install AWS CLI v2 only if not present
     if ! command -v aws &> /dev/null || ! aws --version 2>&1 | grep -q "aws-cli/2"; then
-        echo "Installing AWS CLI v2..."
+        echo -e "${CYAN}${INFO} Installing AWS CLI v2...${NC}"
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install
         rm -rf awscliv2.zip aws || true
+        echo -e "${GREEN}${CHECK} AWS CLI v2 installed${NC}"
     else
-        echo "AWS CLI v2 already installed, skipping..."
+        echo -e "${CYAN}${INFO} AWS CLI v2 already installed, skipping...${NC}"
     fi
 
-    # Install Session Manager Plugin only if not present
     if ! command -v session-manager-plugin &> /dev/null; then
-        echo "Installing Session Manager Plugin..."
+        echo -e "${CYAN}${INFO} Installing Session Manager Plugin...${NC}"
         case "$OS_ID" in
             debian|ubuntu|pop)
                 local session_plugin_deb="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb"
@@ -200,13 +204,13 @@ setup_linux() {
                 rm session-manager-plugin.rpm
                 ;;
         esac
+        echo -e "${GREEN}${CHECK} Session Manager Plugin installed${NC}"
     else
-        echo "Session Manager Plugin already installed, skipping..."
+        echo -e "${CYAN}${INFO} Session Manager Plugin already installed, skipping...${NC}"
     fi
 
-    # Install Vault only if not present
     if ! command -v vault &> /dev/null; then
-        echo "Installing HashiCorp Vault..."
+        echo -e "${CYAN}${INFO} Installing HashiCorp Vault...${NC}"
         case "$OS_ID" in
             debian|ubuntu|pop)
                 wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
@@ -220,79 +224,73 @@ setup_linux() {
                 sudo dnf install -y vault
                 ;;
         esac
+        echo -e "${GREEN}${CHECK} HashiCorp Vault installed${NC}"
     else
-        echo "Vault already installed, skipping..."
+        echo -e "${CYAN}${INFO} Vault already installed, skipping...${NC}"
     fi
 
-    # Install custom executables if not present
     for entry in "${LINUX_EXECUTABLES[@]}"; do
         URL="${entry%%|*}"
         NAME="${entry##*|}"
         if ! command -v "$NAME" &> /dev/null; then
-            echo "Installing $NAME..."
+            echo -e "${CYAN}${INFO} Installing $NAME...${NC}"
             curl -fsSL "$URL" | sudo tee "/usr/local/bin/$NAME" >/dev/null
             sudo chmod +x "/usr/local/bin/$NAME"
+            echo -e "${GREEN}${CHECK} $NAME installed${NC}"
         else
-            echo "$NAME already installed, skipping..."
+            echo -e "${CYAN}${INFO} $NAME already installed, skipping...${NC}"
         fi
     done
 }
 
 setup_macos() {
-    echo "Setting up macOS..."
+    echo -e "\n${CYAN}${INFO} Setting up macOS...${NC}"
     
-    # Check for Homebrew
     if ! command -v brew &> /dev/null; then
-        echo
-        echo "ERROR: Homebrew is required for macOS installation."
-        echo 'Install it using: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-        echo
+        echo -e "\n${RED}✖ ERROR: Homebrew is required for macOS installation.${NC}"
+        echo -e "${YELLOW}Install it using:"
+        echo -e '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n'"${NC}"
         exit 1
     fi
     
-    # Add taps
     for tap in "${BREW_TAPS[@]}"; do
         brew tap "$tap"
     done
     
-    # Install packages
     for pkg in "${MACOS_BREW_PACKAGES[@]}"; do
+        echo -e "${CYAN}${INFO} Installing $pkg...${NC}"
         brew install "$pkg"
     done
     
-    # Install casks
     for cask in "${MACOS_BREW_CASKS[@]}"; do
+        echo -e "${CYAN}${INFO} Installing $cask...${NC}"
         brew install --cask "$cask"
     done
 }
 
 set_environment() {
-    echo "Setting environment variables in ~/.profile..."
+    echo -e "${CYAN}${INFO} Setting environment variables...${NC}"
     local profile_file="$HOME/.profile"
-    
-    # Create profile if it doesn't exist
     touch "$profile_file"
     
-    # Linux-specific environment variable
     if [ "$OS" = "linux" ]; then
         if ! grep -qF "export AWS_VAULT_BACKEND=file" "$profile_file"; then
             echo "export AWS_VAULT_BACKEND=file" >> "$profile_file"
+            echo -e "${GREEN}${CHECK} Added AWS_VAULT_BACKEND to $profile_file${NC}"
         fi
     fi
     
-    # Apply to current session
     source "$profile_file"
 }
 
 add_aws_vault_profile() {
-    # Check if profile exists in credentials list
     if ! aws-vault list --credentials | grep -qxF "$IAM_USER"; then
-        echo
-        echo "Adding AWS Vault profile for $IAM_USER..."
-        echo "Please enter credentials when prompted:"
-        aws-vault add "$IAM_USER"
+        echo -e "\n${CYAN}${INFO} Adding AWS Vault profile for $IAM_USER...${NC}"
+        echo -e "${YELLOW}Please enter credentials when prompted:${NC}"
+        aws-vault add "$IAM_USER" </dev/tty  # Critical fix here
+        echo -e "${GREEN}${CHECK} AWS Vault profile added${NC}"
     else
-        echo "AWS Vault profile $IAM_USER already exists, skipping..."
+        echo -e "${CYAN}${INFO} AWS Vault profile $IAM_USER already exists, skipping...${NC}"
     fi
 }
 
@@ -309,20 +307,15 @@ main() {
     fi
     
     set_environment
-    
-    # Add AWS Vault profile if needed
     add_aws_vault_profile
     
-    # Linux Fish shell warning
     if [ "$OS" = "linux" ] && [[ "$SHELL" == *"fish" ]]; then
-        echo ""
-        echo "WARNING: Detected Fish shell. Please manually add the following to your environment variables:"
-        echo "AWS_VAULT_BACKEND=file"
+        echo -e "\n${YELLOW}${WARN} WARNING: Detected Fish shell. Add to environment:${NC}"
+        echo "set -gx AWS_VAULT_BACKEND file"
     fi
     
-    echo ""
-    echo "Installation complete for profile: $PROFILE_NAME"
-    echo "Please restart your shell to apply all changes"
+    echo -e "\n${GREEN}${CHECK} Installation complete for profile: $PROFILE_NAME${NC}"
+    echo -e "${CYAN}Please restart your shell to apply changes${NC}"
 }
 
 main "$@"
