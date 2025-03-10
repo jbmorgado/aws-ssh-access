@@ -39,11 +39,6 @@ BREW_TAPS=(
     "hashicorp/tap"
 )
 
-ENV_VARS=(
-    "PROFILE_NAME=$PROFILE_NAME"
-    "MFA_IDENTIFIER=$MFA_IDENTIFIER"
-    "PATH=/custom/path:\$PATH"
-)
 # ----------------------------------
 
 detect_os() {
@@ -53,6 +48,10 @@ detect_os() {
             if [ -f /etc/os-release ]; then
                 . /etc/os-release
                 OS_ID="$ID"
+                if [[ "$OS_ID" != "debian" && "$OS_ID" != "ubuntu" && "$OS_ID" != "pop" && "$OS_ID" != "fedora" ]]; then
+                    echo "Unsupported Linux distribution: $OS_ID"
+                    exit 1
+                fi
             else
                 echo "Unsupported Linux distribution"
                 exit 1
@@ -152,7 +151,7 @@ install_ssh_script() {
 
 setup_linux() {
     echo "Setting up Linux ($OS_ID)..."
-    
+
     # Common dependencies
     case "$OS_ID" in
         debian|ubuntu|pop)
@@ -164,66 +163,79 @@ setup_linux() {
             ;;
     esac
 
-    # Install AWS CLI v2
-    echo "Installing AWS CLI v2..."
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-    unzip awscliv2.zip
-    sudo ./aws/install
-    rm -rf awscliv2.zip aws
+    # Install AWS CLI v2 only if not present
+    if ! command -v aws &> /dev/null || ! aws --version 2>&1 | grep -q "aws-cli/2"; then
+        echo "Installing AWS CLI v2..."
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+        rm -rf awscliv2.zip aws
+    else
+        echo "AWS CLI v2 already installed, skipping..."
+    fi
 
-    # Install Session Manager Plugin
-    echo "Installing Session Manager Plugin..."
-    case "$OS_ID" in
-        debian|ubuntu|pop)
-            local session_plugin_deb="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb"
-            wget "$session_plugin_deb" -O session-manager-plugin.deb
-            sudo dpkg -i session-manager-plugin.deb
-            rm session-manager-plugin.deb
-            ;;
-        fedora)
-            local session_plugin_rpm="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm"
-            wget "$session_plugin_rpm" -O session-manager-plugin.rpm
-            sudo dnf install -y session-manager-plugin.rpm
-            rm session-manager-plugin.rpm
-            ;;
-    esac
+    # Install Session Manager Plugin only if not present
+    if ! command -v session-manager-plugin &> /dev/null; then
+        echo "Installing Session Manager Plugin..."
+        case "$OS_ID" in
+            debian|ubuntu|pop)
+                local session_plugin_deb="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb"
+                wget "$session_plugin_deb" -O session-manager-plugin.deb
+                sudo dpkg -i session-manager-plugin.deb
+                rm session-manager-plugin.deb
+                ;;
+            fedora)
+                local session_plugin_rpm="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm"
+                wget "$session_plugin_rpm" -O session-manager-plugin.rpm
+                sudo dnf install -y session-manager-plugin.rpm
+                rm session-manager-plugin.rpm
+                ;;
+        esac
+    else
+        echo "Session Manager Plugin already installed, skipping..."
+    fi
 
-    # Install Vault
-    echo "Installing HashiCorp Vault..."
-    case "$OS_ID" in
-        debian|ubuntu|pop)
-            # Add HashiCorp repository
-            wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-            sudo apt update
-            sudo apt install -y vault
-            ;;
-        fedora)
-            # Add HashiCorp repository
-            sudo dnf install -y dnf-plugins-core
-            sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/fedora/hashicorp.repo
-            sudo dnf install -y vault
-            ;;
-    esac
+    # Install Vault only if not present
+    if ! command -v vault &> /dev/null; then
+        echo "Installing HashiCorp Vault..."
+        case "$OS_ID" in
+            debian|ubuntu|pop)
+                wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+                echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+                sudo apt update
+                sudo apt install -y vault
+                ;;
+            fedora)
+                sudo dnf install -y dnf-plugins-core
+                sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/fedora/hashicorp.repo
+                sudo dnf install -y vault
+                ;;
+        esac
+    else
+        echo "Vault already installed, skipping..."
+    fi
 
-    # Install custom executables
+    # Install custom executables if not present
     for entry in "${LINUX_EXECUTABLES[@]}"; do
         URL="${entry%%|*}"
         NAME="${entry##*|}"
-        echo "Installing $NAME..."
-        curl -fsSL "$URL" | sudo tee "/usr/local/bin/$NAME" >/dev/null
-        sudo chmod +x "/usr/local/bin/$NAME"
+        if ! command -v "$NAME" &> /dev/null; then
+            echo "Installing $NAME..."
+            curl -fsSL "$URL" | sudo tee "/usr/local/bin/$NAME" >/dev/null
+            sudo chmod +x "/usr/local/bin/$NAME"
+        else
+            echo "$NAME already installed, skipping..."
+        fi
     done
 }
 
 setup_macos() {
     echo "Setting up macOS..."
     
-    # Check if Homebrew is installed
+    # Check for Homebrew
     if ! command -v brew &> /dev/null; then
-        echo "Homebrew is not installed."
-        echo 'Please install it by running the command: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
-        echo "And then rerun this utility."
+        echo "Homebrew not found. Please install it first:"
+        echo '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
         exit 1
     fi
     
@@ -249,13 +261,6 @@ set_environment() {
     
     # Create profile if it doesn't exist
     touch "$profile_file"
-    
-    # Add environment variables
-    for var in "${ENV_VARS[@]}"; do
-        if ! grep -qF "export $var" "$profile_file"; then
-            echo "export $var" >> "$profile_file"
-        fi
-    done
     
     # Linux-specific environment variable
     if [ "$OS" = "linux" ]; then
