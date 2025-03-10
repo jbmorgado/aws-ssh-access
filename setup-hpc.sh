@@ -85,7 +85,7 @@ EOF
 
 [profile dp-hpc]
 source_profile = $IAM_USER
-role_arn = "arn:aws:iam::533267315508:role/SKAO-DP-HPC-user"
+role_arn = arn:aws:iam::533267315508:role/SKAO-DP-HPC-user
 region = eu-west-2
 mfa_serial = $MFA_IDENTIFIER
 EOF
@@ -284,6 +284,18 @@ set_environment() {
     source "$profile_file"
 }
 
+add_aws_vault_profile() {
+    # Check if profile exists in credentials list
+    if ! aws-vault list --credentials | grep -qxF "$IAM_USER"; then
+        echo
+        echo "Adding AWS Vault profile for $IAM_USER..."
+        echo "Please enter credentials when prompted:"
+        aws-vault add "$IAM_USER"
+    else
+        echo "AWS Vault profile $IAM_USER already exists, skipping..."
+    fi
+}
+
 main() {
     detect_os
     setup_aws_config
@@ -297,6 +309,9 @@ main() {
     fi
     
     set_environment
+    
+    # Add AWS Vault profile if needed
+    add_aws_vault_profile
     
     # Linux Fish shell warning
     if [ "$OS" = "linux" ] && [[ "$SHELL" == *"fish" ]]; then
