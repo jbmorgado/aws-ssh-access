@@ -8,14 +8,15 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 
 # Check for required arguments
-if [ $# -ne 2 ]; then
-    echo "Usage: $0 <profile_name> <mfa_identifier>"
-    echo "Example: curl -sSL https://example.com/installer.sh | bash -s -- my_profile my_mfa"
+if [ $# -ne 3 ]; then
+    echo "Usage: $0 <iam_username> <mfa_identifier> <profile_name>"
+    echo "Example: curl -sSL https://example.com/installer.sh | bash -s --  iam-john.smith arn:aws:iam::441841723118:mfa/Example jsmith"
     exit 1
 fi
 
-PROFILE_NAME="$1"
+IAM_USER="$1"
 MFA_IDENTIFIER="$2"
+PROFILE_NAME="$3"
 
 # -------- Configuration ----------
 INSTALLER_BASE_URL="https://raw.githubusercontent.com/jbmorgado/aws-ssh-access"
@@ -71,9 +72,9 @@ setup_aws_config() {
     
     mkdir -p "$aws_dir"
     
-    if ! grep -q "\[profile $PROFILE_NAME\]" "$config_file"; then
+    if ! grep -q "\[profile $IAM_USER\]" "$config_file"; then
         cat >> "$config_file" <<EOF
-[profile $PROFILE_NAME]
+[profile $IAM_USER]
 region = eu-west-2
 mfa_serial = $MFA_IDENTIFIER
 EOF
@@ -83,7 +84,7 @@ EOF
         cat >> "$config_file" <<EOF
 
 [profile dp-hpc]
-source_profile = $PROFILE_NAME
+source_profile = $IAM_USER
 role_arn = "arn:aws:iam::533267315508:role/SKAO-DP-HPC-user"
 region = eu-west-2
 mfa_serial = $MFA_IDENTIFIER
@@ -107,7 +108,7 @@ setup_ssh_config() {
 
 Host dp-hpc-headnode
     Hostname i-03bbc056f0dec808b
-    User $(whoami)
+    User $PROFILE_NAME
     ProxyCommand $script_path %h %p
     IdentityFile $identity_file
     ServerAliveInterval 60
