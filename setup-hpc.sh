@@ -99,6 +99,14 @@ setup_ssh_config() {
     local config_file="$ssh_dir/config"
     local identity_file="$ssh_dir/id_ed25519"
     local script_path="$LOCAL_BIN_DIR/ssh-aws-ssm.sh"
+
+    if [ ! -f "$identity_file" ]; then
+        echo
+        echo "WARNING: Expected SSH key $identity_file not found!"
+        echo "Unless you are sure you have a good motive to have the key in a different file, you must generate one with: ssh-keygen -t ed25519 -f $identity_file."
+        echo "Otherwise, be sure to change the dp-hpc-headnode entry in $config_file to point at the correct key."
+        echo
+    fi
     
     mkdir -p "$ssh_dir"
     touch "$config_file"
@@ -170,7 +178,7 @@ setup_linux() {
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install
-        rm -rf awscliv2.zip aws
+        rm -rf awscliv2.zip aws || true
     else
         echo "AWS CLI v2 already installed, skipping..."
     fi
@@ -235,8 +243,10 @@ setup_macos() {
     
     # Check for Homebrew
     if ! command -v brew &> /dev/null; then
-        echo "Homebrew not found. Please install it first:"
-        echo '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        echo
+        echo "ERROR: Homebrew is required for macOS installation."
+        echo 'Install it using: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        echo
         exit 1
     fi
     
