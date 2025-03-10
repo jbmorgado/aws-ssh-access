@@ -18,7 +18,7 @@ PROFILE_NAME="$1"
 MFA_IDENTIFIER="$2"
 
 # -------- Configuration ----------
-INSTALLER_BASE_URL="https://raw.githubusercontent.com/jbmorgado/aws-ssh-access/main"
+INSTALLER_BASE_URL="https://raw.githubusercontent.com/jbmorgado/aws-ssh-access"
 LOCAL_BIN_DIR="$HOME/.local/bin"
 
 LINUX_EXECUTABLES=(
@@ -121,7 +121,7 @@ EOF
 
 install_ssh_script() {
     local script_path="$LOCAL_BIN_DIR/ssh-aws-ssm.sh"
-    local ssh_script_url="$INSTALLER_BASE_URL/ssh-aws-ssm.sh"
+    local ssh_script_url="$INSTALLER_BASE_URL/refs/heads/master/ssh-aws-ssm.sh"
     
     mkdir -p "$LOCAL_BIN_DIR"
 
@@ -153,17 +153,59 @@ install_ssh_script() {
 setup_linux() {
     echo "Setting up Linux ($OS_ID)..."
     
-    # Install system dependencies
+    # Common dependencies
     case "$OS_ID" in
         debian|ubuntu|pop)
             sudo apt-get update
-            sudo apt-get install -y curl wget
+            sudo apt-get install -y curl wget unzip
             ;;
-        fedora|centos|rhel)
-            sudo dnf install -y curl wget
+        fedora)
+            sudo dnf install -y curl wget unzip
             ;;
     esac
-    
+
+    # Install AWS CLI v2
+    echo "Installing AWS CLI v2..."
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
+    rm -rf awscliv2.zip aws
+
+    # Install Session Manager Plugin
+    echo "Installing Session Manager Plugin..."
+    case "$OS_ID" in
+        debian|ubuntu|pop)
+            local session_plugin_deb="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb"
+            wget "$session_plugin_deb" -O session-manager-plugin.deb
+            sudo dpkg -i session-manager-plugin.deb
+            rm session-manager-plugin.deb
+            ;;
+        fedora)
+            local session_plugin_rpm="https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm"
+            wget "$session_plugin_rpm" -O session-manager-plugin.rpm
+            sudo dnf install -y session-manager-plugin.rpm
+            rm session-manager-plugin.rpm
+            ;;
+    esac
+
+    # Install Vault
+    echo "Installing HashiCorp Vault..."
+    case "$OS_ID" in
+        debian|ubuntu|pop)
+            # Add HashiCorp repository
+            wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+            sudo apt update
+            sudo apt install -y vault
+            ;;
+        fedora)
+            # Add HashiCorp repository
+            sudo dnf install -y dnf-plugins-core
+            sudo dnf config-manager --add-repo https://rpm.releases.hashicorp.com/fedora/hashicorp.repo
+            sudo dnf install -y vault
+            ;;
+    esac
+
     # Install custom executables
     for entry in "${LINUX_EXECUTABLES[@]}"; do
         URL="${entry%%|*}"
@@ -177,9 +219,12 @@ setup_linux() {
 setup_macos() {
     echo "Setting up macOS..."
     
-    # Install Homebrew if not exists
+    # Check if Homebrew is installed
     if ! command -v brew &> /dev/null; then
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        echo "Homebrew is not installed."
+        echo 'Please install it by running the command: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+        echo "And then rerun this utility."
+        exit 1
     fi
     
     # Add taps
