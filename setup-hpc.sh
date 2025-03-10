@@ -33,7 +33,7 @@ MACOS_BREW_CASKS=(
 )
 
 BREW_TAPS=(
-    "brew tap hashicorp/tap"
+    "hashicorp/tap"
 )
 
 ENV_VARS=(
@@ -69,21 +69,24 @@ setup_aws_config() {
     
     mkdir -p "$aws_dir"
     
-    if ! grep -q "[profile $PROFILE_NAME]" "$config_file"; then
-        cat > "$config_file" <<EOF
+    if ! grep -q "\[profile $PROFILE_NAME\]" "$config_file"; then
+        cat >> "$config_file" <<EOF
 [profile $PROFILE_NAME]
 region = eu-west-2
 mfa_serial = $MFA_IDENTIFIER
 EOF
+    fi
 
-    if ! grep -q "[profile dp-hpc]" "$config_file"; then
-        cat > "$config_file" <<EOF
+    if ! grep -q "\[profile dp-hpc\]" "$config_file"; then
+        cat >> "$config_file" <<EOF
+
 [profile dp-hpc]
 source_profile = $PROFILE_NAME
-role_arn = arn:aws:iam::533267315508:role/SKAO-DP-HPC-user
+role_arn = "arn:aws:iam::533267315508:role/SKAO-DP-HPC-user"
 region = eu-west-2
 mfa_serial = $MFA_IDENTIFIER
 EOF
+    fi
 
     echo "AWS configuration created/updated at $config_file"
 }
@@ -92,6 +95,8 @@ setup_ssh_config() {
     local ssh_dir="$HOME/.ssh"
     local config_file="$ssh_dir/config"
     local identity_file="$ssh_dir/id_ed25519"
+    local bin_dir="$HOME/.local/bin"
+    local script_path="$bin_dir/ssh-aws-ssm.sh"
     
     mkdir -p "$ssh_dir"
     touch "$config_file"
@@ -102,7 +107,7 @@ setup_ssh_config() {
 Host dp-hpc-headnode
     Hostname i-03bbc056f0dec808b
     User $(whoami)
-    ProxyCommand ssh-aws-ssm.sh %h %p
+    ProxyCommand $script_path %h %p
     IdentityFile $identity_file
     ServerAliveInterval 60
 EOF
@@ -118,13 +123,24 @@ install_ssh_script() {
     
     mkdir -p "$bin_dir"
     
-    # Create the SSH-AWS-SSM script
-    cat > "$script_path" <<'EOF'
-#!/bin/bash
-# Example script content - replace with your actual implementation
-aws ssm start-session --target "$1" --document-name AWS-StartSSHSession --parameters portNumber="$2"
-EOF
-
+    # Get the installer script's origin URL from the curl command history
+    local installer_url=$(history | grep -E 'curl\s+-sSL\s+[^ ]+' | tail -1 | sed -E 's/.*curl -sSL ([^ ]+).*/\1/')
+    
+    if [ -z "$installer_url" ]; then
+        echo "ERROR: Could not determine installer URL"
+        echo "Please download ssh-aws-ssm.sh manually and place it in $bin_dir"
+        return 1
+    fi
+    
+    # Derive SSH script URL from installer URL
+    local ssh_script_url="${installer_url%/*}/ssh-aws-ssm.sh"
+    
+    echo "Downloading SSH helper script from $ssh_script_url..."
+    curl -fsSL -o "$script_path" "$ssh_script_url" || {
+        echo "ERROR: Failed to download ssh-aws-ssm.sh"
+        return 1
+    }
+    
     chmod +x "$script_path"
     echo "Installed ssh-aws-ssm.sh to $bin_dir"
     
